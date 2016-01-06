@@ -48,10 +48,11 @@ OPKG_INSTALLED=$(swinst_init)
 
 <?php } else { ?>
 
-# SUPPRESSED:
+# SUPPRESED -- use TEST_SHOW_ALL=1 to show suppressed output
 #    bblib.sh
 #    swinst.sh
 #    services.sh
+# 
 
 <?php } ?>
 
