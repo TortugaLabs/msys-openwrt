@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# Simple utility to work with service files
+#
+op_list() {
+  for init_file in /etc/init.d/*
+  do
+    [ ! -x $init_file ] && continue
+    rc_common=$(head -1 $init_file | grep rc.common | wc -l)
+    [ $rc_common -eq 0 ] && continue
+    echo -n "$(basename $init_file): "
+    if $init_file enabled ; then
+      echo on
+    else
+      echo off
+    fi
+  done
+}
+
+op="$1" ; shift
+[ -z "$op" ] && exec cat <<-EOF
+	Usage:
+	    $0 {cmd} [opts]
+
+	Commands:
+	    list
+	 	List available services
+	    verb [service]
+	 	Calls [service] {verb}
+	EOF
+
+if [ x"$op" = x"list" ] ; then
+  op_list "$@"
+else
+  srv="$1" ; shift
+  if [ -z "$srv" ] ; then
+    echo No service specified 1>&2
+    exit 1
+  fi
+  exec /etc/init.d/$srv $op "$@"
+  exit 1
+fi

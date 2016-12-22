@@ -1,0 +1,7 @@
+#!/bin/sh
+cd /etc/dropbear || exit
+for kp in rsa dss
+do
+  [ -f dropbear_${kp}_host_key ] || continue
+  dropbearkey -y -f dropbear_${kp}_host_key | grep ssh-$kp
+done
