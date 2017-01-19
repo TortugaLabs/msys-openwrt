@@ -53,6 +53,8 @@ swinst() {
 
 swinst_cleanup() {
   local sw
+  ## TODO
+  xpkg=echo
   for sw in ${OPKG_INSTALLED}
   do
     eval local req=\$$(mkid RSW_${sw})

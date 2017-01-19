@@ -17,7 +17,7 @@ if [ -n "$SYS_MAC" ] ; then
     warn "    actual:    $rt_mac"
     exit 1
   else
-    echo "MAC address verified"
+    echo "MAC address verified ($SYS_MAC)"
   fi
 else
   warn "No MAC address verification"

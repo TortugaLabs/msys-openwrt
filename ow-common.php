@@ -7,8 +7,9 @@
     require_once(MSYS_OPENWRT.'ow-check.sh');
     require_once(MSYS_OPENWRT.'bblib.sh');
     require_once(MSYS_OPENWRT.'services.sh');
-    require_once(MSYS_OPENWRT.'swinst.sh');    
+    require_once(MSYS_OPENWRT.'swinst.sh');
   }
+  echo std_copyfile(MSYS_BASE.'ashlib/shlog','/bin/shlog',['mode'=>755,STD_COPYFILE_QUOTED]);
   require_once(MSYS_OPENWRT.'core.sh');
 
   foreach (glob(MSYS_OPENWRT.'utils/*') as $in) {
