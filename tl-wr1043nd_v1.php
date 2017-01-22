@@ -2,6 +2,12 @@
 //
 // Macros for configuring TL-WR1042NDv1
 //
+// Expects that the config array contains NIC configs as:
+//
+// 'hosts.$sysname.nics.$nicname'
+//
+// Networks are under 'nets'
+//
 function config_led() {
   return "config led 'led_usb'
 	option name 'USB'
@@ -18,122 +24,96 @@ config led 'led_wlan'
 }
 
 function config_swcfg() {
-  $txt = 'fixfile --mode=755 /usr/bin/swcfg <<\'EOF\''.NL;
-  $txt .= '#!/bin/sh'.NL;
-  $txt .= 'exec swconfig dev switch0 "$@"'.NL;
-  $txt .= NL.'EOF'.NL;
+  $txt = 'fixfile --mode=755 /usr/bin/swcfg <<\'EOF\''.PHP_EOL;
+  $txt .= '#!/bin/sh'.PHP_EOL;
+  $txt .= 'exec swconfig dev switch0 "$@"'.PHP_EOL;
+  $txt .= PHP_EOL.'EOF'.PHP_EOL;
   return $txt;
 }
 
-function config_network($host = NULL) {
-  global $cf;
-
-  $txt = 'fixfile /etc/config/network <<EOF'.NL;
-  $txt .= config_loopback();
-
-  if (!isset($host)) $host = SYSNAME;
-  if (isset($cf['hosts'][$host])) {
-    $hdat = &$cf['hosts'][$host];
-    if (isset($hdat['nics'])) {
-      foreach (array_keys($hdat['nics']) as $ifname) {
-	$txt .= config_network_interface($host,$ifname);
-      }
-    }
-    if (isset($hdat['switch'])) {
-      $txt .= config_switch($hdat['switch']);
-    }
+function config_network_interfaces($ifdat) {
+  $txt = '';
+  foreach ($ifdat as $if => $dat) {
+    $txt .= config_network_if($if,$dat);
   }
-  $txt .= NL.'EOF'.NL;
-  $txt .= NL.'restart network /etc/config/network'.NL;
-  $txt .= NL;
-
-  $txt .= config_swcfg();
-
-  //#config globals 'globals'
-  //#	option ula_prefix 'fdce:32ed:3796::/48'
-
   return $txt;
 }
 
-
-function config_network_interface($host,$ifname) {
-  $addr = lk_addr($host,$ifname);
-  if (!count($addr)) return '';
+function config_network_if($ifname,$ifdat) {
+  $txt = '';
+  $txt .= 'config interface '.$ifname.PHP_EOL;
 
   $proto = 'dhcp';
-  if (isset($addr[0]['hostid'])) {
-	  if ($addr[0]['hostid'])
-		  $proto = 'static';
-	  elseif ($addr[0]['hostid'] !== "")
-		  $proto = 'non-addr';
+
+  if (isset($ifdat['ipv4']) || isset($ifdat['ipv6'])) {
+    $proto = 'static';
+  } else {
+    if (isset($ifdat['node']) && ($ifdat['node'] == 0 || $ifdat['node'] == ''))
+      $proto = 'no-addr';
   }
 
-  global $cf;
-  $txt = 'config interface '.$ifname.NL;
-  $vlan = res('vlan',$ifname);
-
-  if (!$vlan) {
-    trigger_error('Interface '.$ifname.' missing VLAN configuration',
-		  E_USER_WARNING);
-  } else {
-    $txt .= '    option ifname eth0.'.$vlan.NL;
+  if (isset($ifdat['vlan']) && filter_var($ifdat['vlan'],FILTER_VALIDATE_INT)) {
+    $txt .= '	option ifname eth0.'.$ifdat['vlan'].PHP_EOL;
     switch ($proto) {
     case 'static':
-      $txt .= '    option force_link 1'.NL;
-      $txt .= '    option proto static'.NL;
+      $txt .= '	option force_link 1'.PHP_EOL;
+      $txt .= '	option proto static'.PHP_EOL;
 
-      $ip = res('ip4',$ifname);
-      if ($ip) {
-	$txt .= '    option ipaddr '.$ip.NL;
-	$txt .= '    option netmask 255.255.255.0'.NL;
-	$ip = lk_gw('ip4',$ifname);
-	if ($ip) $txt .= '    option gateway '.$ip.NL;
+      if (isset($ifdat['ipv4'])) {
+	$txt .= '	option ipaddr '.$ifdat['ipv4'].PHP_EOL;
+	$txt .= '	option netmask 255.255.255.0'.PHP_EOL;
+	if (isset($ifdat['gw'])) {
+	  $i = $ifdat['gw'];
+	} elseif (isset($ifdat['node']) && $ifdat['node'] > 1) {
+	  $i = explode('.',$ifdat['ipv4']);
+	  $i[3] = 1;
+	  $i = implode('.',$i);
+	}
+	if ($i != $ifdat['ipv4']) $txt .= '	option gateway '.$i.PHP_EOL;
+
       }
-      $ip = res('ip6',$ifname);
-      if ($ip) {
-	$txt .= '    option ip6addr '.$ip.'/64'.NL;
-	$ip = lk_gw('ip6',$ifname);
-	if ($ip) $txt .= '    option ip6gw '.$ip.NL;
+      if (isset($ifdat['ipv6'])) {
+	$txt .= '	option ip6addr '.$ifdat['ipv6'].'/64'.PHP_EOL;
+	if (isset($ifdat['ipv6gw'])) {
+	  $i = $ifdat['ipv6gw'];
+	} elseif (isset($ifdat['node']) && $ifdat['node'] > 1) {
+	  $i = explode('::',$ifdat['ipv6']);
+	  $i = $i[0].'::1';
+	}
+	if ($i != $ifdat['ipv6']) $txt .= '	option ip6gw '.$i.PHP_EOL;
       }
       break;
-	 case 'non-addr':
-		 break;
+    case 'no-addr':
+      break;
     case 'dhcp':
     default:
-      $txt .= '    option proto dhcp'.NL;
+      $txt .= '    option proto dhcp'.PHP_EOL;
       break;
     }
-    if (isset($cf['hosts'][SYSNAME]['nics'][$ifname]['wifi'])) {
-      if ($cf['hosts'][SYSNAME]['nics'][$ifname]['wifi']) {
-	$txt .= '    option type bridge'.NL;
-      }
-    }
-    if (isset($cf['hosts'][SYSNAME]['nics'][$ifname]['opts'])) {
-      $xopts = $cf['hosts'][SYSNAME]['nics'][$ifname]['opts'];
-      if (!is_array($xopts)) $xopts = array($xopts);
-      foreach ($xopts as $ln) {
-	$txt .= '    option '.$ln.NL;
-      }
+  }
+  if (isset($ifdat['wifi'])) {
+    $txt .= '	option type bridge'.PHP_EOL;
+  }
+  if (isset($ifdat['opts']) && is_arra($ifdat['opts'])) {
+    foreach ($ifdat['opts'] as $i=>$j) {
+	$txt .= '	option '.$i.' '.$j.PHP_EOL;
     }
   }
-  $txt .= NL;
+  $txt .= PHP_EOL.PHP_EOL;
   return $txt;
 }
 
-
-//
-function config_switch($ports) {
+function config_switch($ports,$nets) {
   $txt = '';
-  $txt .= 'config switch'.NL;
-  $txt .= '    option name switch0'.NL;
-  $txt .= '    option reset 1'.NL;
-  $txt .= '    option enable_vlan 1'.NL;
-  $txt .= '    option enable_vlan4k 1'.NL;
-  $txt .= NL;
+  $txt .= 'config switch'.PHP_EOL;
+  $txt .= '    option name switch0'.PHP_EOL;
+  $txt .= '    option reset 1'.PHP_EOL;
+  $txt .= '    option enable_vlan 1'.PHP_EOL;
+  $txt .= '    option enable_vlan4k 1'.PHP_EOL;
+  $txt .= PHP_EOL;
 
-  global $cf;
-  $vlan = array();
-  foreach ($cf['nets'] as $netname=>&$netdat) {
+  $vlan = [];
+  foreach ($nets as $netname=>$netdat) {
     if (!isset($netdat['vlan'])) continue;
     if (isset($vlan[$netdat['vlan']])) {
       trigger_error('Redefining vlan '.$netdat['vlan'].' in '.$netname.
@@ -144,6 +124,7 @@ function config_switch($ports) {
     $vlan[$netdat['vlan']] = array('netname' => $netname,
 				   'ports' => array('5'=>'5t'));
   }
+
   foreach ($ports as $pid => $vl) {
     if ($vl == '*trunk*') {
       foreach ($vlan as $vlid => &$vlr) {
@@ -152,106 +133,88 @@ function config_switch($ports) {
 	if (ADMIN_VLAN == $vlid) $vlr['ports'][$pid] = $pid;
       }
     } else {
-      if (!isset($cf['nets'][$vl])) {
+      if (!isset($nets[$vl])) {
 	trigger_error($pid.' is referencing unknown VLAN '.$vl,E_USER_WARNING);
 	continue;
       }
-      if (!isset($cf['nets'][$vl]['vlan'])) {
+      if (!isset($nets[$vl]['vlan'])) {
 	trigger_error($vl.' used in '.$pid.' missing VLAN id',E_USER_WARNING);
 	continue;
       }
-      $vlan[$cf['nets'][$vl]['vlan']]['ports'][$pid] = $pid;
+      $vlan[$nets[$vl]['vlan']]['ports'][$pid] = $pid;
     }
   }
 
   foreach ($vlan as $vlid => $vldat) {
     if (count($vldat['ports']) == 0) continue;
-    $txt .= '# '.$vldat['netname'].NL;
-    $txt .= 'config switch_vlan'.NL;
-    $txt .= '    option device "switch0"'.NL;
-    $txt .= '    option vlan '.$vlid.NL;
-    $txt .= '    option ports "'.implode(' ',$vldat['ports']).'"'.NL;
-    $txt .= NL;
+    $txt .= '# '.$vldat['netname'].PHP_EOL;
+    $txt .= 'config switch_vlan'.PHP_EOL;
+    $txt .= '    option device "switch0"'.PHP_EOL;
+    $txt .= '    option vlan '.$vlid.PHP_EOL;
+    $txt .= '    option ports "'.implode(' ',$vldat['ports']).'"'.PHP_EOL;
+    $txt .= PHP_EOL;
   }
 
   // Add any default port ids...
   if (defined('ADMIN_VLAN')) {
     foreach ($ports as $pid => $vl) {
       if ($vl != '*trunk*') continue;
-      $txt .= 'config switch_port'.NL;
-      $txt .= '    option port '.$pid.NL;
-      $txt .= '    option pvid '.ADMIN_VLAN.NL;
-      $txt .= NL;
+      $txt .= 'config switch_port'.PHP_EOL;
+      $txt .= '    option port '.$pid.PHP_EOL;
+      $txt .= '    option pvid '.ADMIN_VLAN.PHP_EOL;
+      $txt .= PHP_EOL;
     }
   }
-
-
   return $txt;
 }
 
-function config_wireless($opts = NULL) {
-  global $cf;
 
-  if (isset($opts['host'])) {
-    $host = $opts['host'];
-    unset($opts['host']);
-  } else {
-    $host = SYSNAME;
-  }
-  // If not found we skip most of this
-  if (!isset($cf['hosts'][$host])) return '';
 
-  $disabled = 0;
-
-  if (isset($cf['hosts'][$host]['wchan'])) {
-    $wchan = $cf['hosts'][$host]['wchan'];
+//
+function config_wifi_radio($wchan, $opts=NULL) {
+  if ($wchan) {
+    $disabled = 0;
   } else {
     $wchan = 1;
     $disabled = 1;
   }
-
-  if (!isset($opts)) $opts = array();
-
-  foreach (array('hwmode'=>'11g',
+  if (is_array($opts)) $opts = [];
+  foreach (['hwmode'=>'11g',
 		 'path'=>"'platform/ath9k'",
 		 'htmode' => 'HT20',
 		 'type'=>'mac80211',
 		 'channel'=>$wchan,
-		 'disabled' => $disabled) as $opt=>$def) {
+		 'disabled' => $disabled] as $opt=>$def) {
     if (!isset($opts[$opt])) $opts[$opt] = $def;
   }
-
-  $txt = 'fixfile /etc/config/wireless <<EOF'.NL;
-  $txt .='config wifi-device radio0'.NL;
+  $txt = '';
+  $txt .='config wifi-device radio0'.PHP_EOL;
   foreach ($opts as $k=>$v) {
-    $txt .= '    option '.$k.' '.$v.NL;
+    $txt .= '    option '.$k.' '.$v.PHP_EOL;
   }
-  $txt .= NL;
-
-  $hdat = &$cf['hosts'][$host];
-  if (isset($hdat['nics'])) {
-    foreach ($hdat['nics'] as $ifnam => &$ifdat) {
-      if (!isset($ifdat['wifi'])) continue;
-      if (!$ifdat['wifi']) continue;
-      $netid = res('netid',$host,$ifnam);
-      if (!$netid) continue;
-      if (!isset($cf['nets'][$netid])) continue;
-      $netdat = &$cf['nets'][$netid];
-      $txt .= 'config wifi-iface'.NL;
-      $txt .= '    option device radio0'.NL;
-      $txt .= '    option network '.$ifnam.NL;
-      $txt .= '    option mode ap'.NL;
-      foreach (array('ssid','key','encryption') as $v) {
-	if (isset($netdat[$v]))
-	  $txt.= '    option '.$v.' \''.$netdat[$v].'\''.NL;
-      }
-      $txt .= NL;
-    }
-  }
-
-  $txt .= NL.'EOF'.NL;
-  $txt .= 'restart network /etc/config/wireless'.NL;
-  $txt .= NL;
-
- return $txt;
+  $txt .= PHP_EOL;
+  return $txt;
 }
+
+function config_wifi_nets($nics,$nets) {
+  $txt = '';
+  foreach ($nics as $if => $ifdat) {
+    
+    if (!isset($ifdat['wifi'])) continue;
+    if (!$ifdat['wifi']) continue;
+    if (!isset($ifdat['net'])) continue;
+    $netid = $ifdat['net'];
+    if (!isset($nets[$netid])) continue;
+    $netdat = &$nets[$netid];
+    $txt .= 'config wifi-iface'.PHP_EOL;
+    $txt .= '	option device radio0'.PHP_EOL;
+    $txt .= '	option network '.$if.PHP_EOL;
+    $txt .= '	option mode ap'.PHP_EOL;
+    foreach (['ssid','key','encryption'] as $v) {
+      if (isset($netdat[$v])) $txt .= '	option '.$v.' \''.$netdat[$v].'\''.PHP_EOL;
+    }
+    $txt .= PHP_EOL;
+  }
+  return $txt;
+}
+

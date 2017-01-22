@@ -9,7 +9,6 @@ if (!defined('BRIEF_OUTPUT')) {
   require_once(MSYS_OPENWRT.'bblib.sh');
   require_once(MSYS_OPENWRT.'services.sh');
   require_once(MSYS_OPENWRT.'swinst.sh');
-  require_once(MSYS_OPENWRT.'misc.sh');
 }
 echo std_copyfile(MSYS_BASE.'ashlib/shlog','/bin/shlog',['mode'=>755,STD_COPYFILE_QUOTED]);
 require_once(MSYS_OPENWRT.'core.sh');
@@ -27,7 +26,6 @@ function config_loopback() {
 	option proto 'static'
 	option ipaddr '127.0.0.1'
 	option netmask '255.0.0.0'
-	#option ip6addr '::1'
 \n";
 }
 
