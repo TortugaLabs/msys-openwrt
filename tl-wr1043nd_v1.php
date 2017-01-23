@@ -42,6 +42,7 @@ function config_network_interfaces($ifdat) {
 function config_network_if($ifname,$ifdat) {
   $txt = '';
   $txt .= 'config interface '.$ifname.PHP_EOL;
+  if (isset($ifdat['wifi']) && $ifdat['wifi']) $txt .= '	option type bridge'.PHP_EOL;
 
   $proto = 'dhcp';
 
