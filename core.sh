@@ -1,6 +1,7 @@
 #
 # Default pkg installation
 #
+# TODO
 <?php if (FALSE) { ?>
 [ $openwrt_version = "14.07" ] \
   && swinst flock pwgen diffutils ifstat tcpdump-mini muninlite
@@ -12,6 +13,12 @@
   && enable luci_fixtime boot ubus network usb dropbear done led watchdog \
   sysntpd sysctl
 [ $openwrt_version = "14.07" ] \
+  && enable boot done dropbear led log network sysctl sysfixtime \
+	    sysntpd system
+	    #cron dnsmasq firewall odhcpd telnet uhttpd #umount
+
+# TODO
+[ $openwrt_version = "15.0??" ] \
   && enable boot done dropbear led log network sysctl sysfixtime \
 	    sysntpd system
 	    #cron dnsmasq firewall odhcpd telnet uhttpd #umount
